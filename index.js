@@ -1,112 +1,127 @@
 const Websocket = require('ws')
+const { playerJoin, getPlayer } = require('./function')
+const { matchResponse, playerRound, playerDetails } = require('./model');
 
-const sampleResponse = {
-    "status_string": "roundEnded",
-    "data_string": "a",
-    "data_num_array": [1, 2, 3, 4],
-    "data_str_array": [],
-    "data_int": 0,
-    "data_decimal": 222.2222,
-};
+// let outputResult = undefined;
+let playerMatchRound = playerRound;
+let playerAccountDetails = playerDetails;
+let resultArr = [];
 
-const pendingResponse = {
-    "status_string": "roundPending",
-    "data_string": "a",
-    "data_num_array": [1, 2, 3, 4],
-    "data_str_array": [],
-    "data_int": 0,
-    "data_decimal": 222.2222,
-};
-
-var playerAcc = {
-    "playerID": "123456789",
-    "totalBetValue": 0,
-    "betType": [{
-            "type": "ODD",
-            "value": 0,
-        },
-        {
-            "type": "EVEN",
-            "value": 0,
-        },
-        {
-            "type": "SMALL",
-            "value": 0,
-        },
-        {
-            "type": "BIG",
-            "value": 0,
-        }
-    ],
-    "betTransactions": [],
-}
-
+//Create new Websocket server
 const wss = new Websocket.Server({ port: 8080 }, () => {
     console.log('Server Started');
-
 })
 
-wss.on('connection', function connection(ws) {
+//Client connected to server
+wss.on('connection', function connection(ws, req) {
 
     ws.on('message', (data) => {
-        console.log(`${data} is received `);
-
+        console.log(`${data} is received`);
         let receivedInput = JSON.parse(data.toString());
 
+        //Setup the account details
+        if (receivedInput.betDetails == "AccountSetup") {
+            let playerID = req.headers['sec-websocket-key'];
+            if (!getPlayer(playerID))
+                playerMatchRound = playerJoin(playerID, receivedInput.playerName);
+
+            playerAccountDetails = getPlayer(playerID);
+        }
+
+        //Check the bets of user
         if (receivedInput.betDetails == "roundDetails") {
             switch (receivedInput.betType) {
                 case "ODD":
-                    playerAcc.betType[0].value += receivedInput.betValue;
+                    playerMatchRound.betType[0].value += receivedInput.betValue;
                     break;
 
                 case "EVEN":
-                    playerAcc.betType[1].value += receivedInput.betValue;
+                    playerMatchRound.betType[1].value += receivedInput.betValue;
                     break;
 
                 case "SMALL":
-                    playerAcc.betType[2].value += receivedInput.betValue;
+                    playerMatchRound.betType[2].value += receivedInput.betValue;
                     break;
 
                 case "BIG":
-                    playerAcc.betType[3].value += receivedInput.betValue;
+                    playerMatchRound.betType[3].value += receivedInput.betValue;
+                    break;
+
+                case "2R2W":
+                    playerMatchRound.betType[4].value += receivedInput.betValue;
+                    break;
+
+                case "4R":
+                    playerMatchRound.betType[5].value += receivedInput.betValue;
+                    break;
+
+                case "3R1W":
+                    playerMatchRound.betType[6].value += receivedInput.betValue;
+                    break;
+
+                case "3W1R":
+                    playerMatchRound.betType[7].value += receivedInput.betValue;
+                    break;
+
+                case "4W":
+                    playerMatchRound.betType[8].value += receivedInput.betValue;
                     break;
             }
-            playerAcc.betTransactions.push({ "type": receivedInput.betType, "value": receivedInput.betValue });
-            playerAcc.totalBetValue += receivedInput.betValue;
-            pendingResponse.data_int = playerAcc.totalBetValue;
-            sampleResponse.data_int = playerAcc.totalBetValue;
+            playerMatchRound.betTransactions.push({ "type": receivedInput.betType, "value": receivedInput.betValue });
+            playerAccountDetails.totalBetValue += receivedInput.betValue;
+            playerAccountDetails.playerBalance -= receivedInput.betValue;
+            matchResponse.status = "Pending";
         }
 
+        //Undo the previous bet of user
         if (receivedInput.betDetails == "undoPrevious") {
-            if (playerAcc.betTransactions.length > 0) {
-                let lastTrans = playerAcc.betTransactions[playerAcc.betTransactions.length - 1];
+            if (playerMatchRound.betTransactions.length > 0) {
+                let lastTrans = playerMatchRound.betTransactions[playerMatchRound.betTransactions.length - 1];
                 switch (lastTrans.type) {
                     case "ODD":
-                        playerAcc.betType[0].value -= lastTrans.value;
+                        playerMatchRound.betType[0].value -= lastTrans.value;
                         break;
 
                     case "EVEN":
-                        playerAcc.betType[1].value -= lastTrans.value;
+                        playerMatchRound.betType[1].value -= lastTrans.value;
                         break;
 
                     case "SMALL":
-                        playerAcc.betType[2].value -= lastTrans.value;
+                        playerMatchRound.betType[2].value -= lastTrans.value;
                         break;
 
                     case "BIG":
-                        playerAcc.betType[3].value -= lastTrans.value;
+                        playerMatchRound.betType[3].value -= lastTrans.value;
+                        break;
+
+                    case "2R2W":
+                        playerMatchRound.betType[4].value -= receivedInput.betValue;
+                        break;
+
+                    case "4R":
+                        playerMatchRound.betType[5].value -= receivedInput.betValue;
+                        break;
+
+                    case "3R1W":
+                        playerMatchRound.betType[6].value -= receivedInput.betValue;
+                        break;
+
+                    case "3W1R":
+                        playerMatchRound.betType[7].value -= receivedInput.betValue;
+                        break;
+
+                    case "4W":
+                        playerMatchRound.betType[8].value -= receivedInput.betValue;
                         break;
                 }
-                playerAcc.totalBetValue -= lastTrans.value;
-                pendingResponse.data_int = playerAcc.totalBetValue;
-                sampleResponse.data_int = playerAcc.totalBetValue;
-                playerAcc.betTransactions.pop();
+                playerAccountDetails.totalBetValue -= lastTrans.value;
+                playerAccountDetails.playerBalance += lastTrans.value;
+                matchResponse.status = "Pending";
+                playerMatchRound.betTransactions.pop();
             }
         }
 
-
-        let output = receivedInput.betDetails == "RoundEnded" ? sampleResponse : pendingResponse;
-        let resultArr = [];
+        //The round is ended with timer
         if (receivedInput.betDetails == "RoundEnded") {
             let redResult = Math.floor(Math.random() * 4);
             let whiteResult = 4 - redResult;
@@ -123,12 +138,17 @@ wss.on('connection', function connection(ws) {
                 if (resultArr.length == 4)
                     break;
             }
-            console.log(resultArr);
-            console.log(playerAcc);
+            matchResponse.status = "Completed";
+            matchResponse.matchResult = resultArr;
         }
 
-        sampleResponse.data_str_array = resultArr;
-        ws.send(JSON.stringify(output));
+        if (receivedInput.betDetails == "AccountSetup")
+            ws.send("0" + JSON.stringify(playerAccountDetails));
+        else {
+            ws.send("1" + JSON.stringify(matchResponse));
+            ws.send("0" + JSON.stringify(playerAccountDetails));
+            console.log(playerAccountDetails);
+        }
     })
 })
 
